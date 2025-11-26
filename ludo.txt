@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Modern Ludo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap');
+
+        body {
+            font-family: 'Fredoka', sans-serif;
+            background-color: #eef2f5;
+            touch-action: none;
+            overflow: hidden;
+        }
+
+        .shadow-soft {
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        }
+
+        .dice-container {
+            perspective: 1000px;
+            width: 60px;
+            height: 60px;
+        }
+
+        .dice {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.5s ease-out;
+        }
+
+        .dice-face {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            background: white;
+            border-radius: 12px;
+            border: 2px solid #e2e8f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            font-weight: bold;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        .dot {
+            background-color: #333;
+            border-radius: 50%;
+            width: 10px;
+            height: 10px;
+        }
+        
+        /* Face transforms */
+        .face-1 { transform: rotateY(0deg) translateZ(30px); }
+        .face-2 { transform: rotateY(90deg) translateZ(30px); }
+        .face-3 { transform: rotateY(180deg) translateZ(30px); }
+        .face-4 { transform: rotateY(-90deg) translateZ(30px); }
+        .face-5 { transform: rotateX(90deg) translateZ(30px); }
+        .face-6 { transform: rotateX(-90deg) translateZ(30px); }
+
+        /* Dot Layouts */
+        .face-1 { display: flex; justify-content: center; align-items: center; }
+        .face-2 { display: flex; justify-content: space-around; padding: 10px; transform: rotateY(90deg) translateZ(30px); }
+        .face-2 .dot:nth-child(1) { align-self: flex-start; }
+        .face-2 .dot:nth-child(2) { align-self: flex-end; }
+        
+        .face-3 { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; padding: 10px;}
+        
+        .face-4 { display: flex; flex-wrap: wrap; justify-content: space-between; padding: 10px; }
+        .face-5 { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; padding: 10px; }
+        .face-6 { display: flex; flex-wrap: wrap; justify-content: space-between; padding: 8px; }
+
+        .hidden { display: none !important; }
+        
+        .pulse-ring {
+            box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+            animation: pulse-blue 1.5s infinite;
+        }
+
+        @keyframes pulse-blue {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+        }
+
+        /* Modal Transitions */
+        .modal {
+            transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(0.9);
+        }
+        .modal.active {
+            opacity: 1;
+            pointer-events: auto;
+            transform: scale(1);
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col items-center justify-center bg-gray-100 select-none">
+
+    <!-- Game Container -->
+    <div class="relative w-full max-w-2xl h-full flex flex-col">
+        
+        <!-- Header -->
+        <div class="h-16 flex items-center justify-between px-4 bg-white shadow-sm z-10 shrink-0">
+            <h1 class="text-xl font-bold text-gray-800">Ludo Master</h1>
+            <div id="turn-indicator" class="flex items-center gap-2 px-3 py-1 rounded-full bg-gray-100">
+                <div id="turn-dot" class="w-3 h-3 rounded-full bg-red-500"></div>
+                <span id="turn-text" class="text-sm font-semibold text-gray-600">Red's Turn</span>
+            </div>
+            <button id="menu-btn" class="p-2 text-gray-500 hover:text-gray-800 transition">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+            </button>
+        </div>
+
+        <!-- Canvas Area -->
+        <div class="flex-1 relative flex items-center justify-center bg-gray-50 overflow-hidden" id="canvas-container">
+            <canvas id="game-canvas" class="shadow-soft rounded-xl bg-white"></canvas>
+            
+            <!-- Dice Overlay Control -->
+            <div id="dice-control" class="absolute bottom-8 right-8 z-20 flex flex-col items-center gap-2 transition-all duration-300">
+                <div class="dice-container cursor-pointer" id="dice-btn">
+                    <div class="dice" id="dice-el">
+                        <div class="dice-face face-1"><div class="dot"></div></div>
+                        <div class="dice-face face-2"><div class="dot"></div><div class="dot"></div></div>
+                        <div class="dice-face face-3"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+                        <div class="dice-face face-4"><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+                        <div class="dice-face face-5"><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+                        <div class="dice-face face-6"><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+                    </div>
+                </div>
+                <span id="dice-msg" class="text-xs font-bold text-gray-500 bg-white/80 px-2 py-1 rounded backdrop-blur">Roll</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Menu Modal -->
+    <div id="menu-modal" class="modal active fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl shadow-2xl p-8 w-[90%] max-w-md text-center">
+            <h2 class="text-3xl font-bold text-gray-800 mb-2">Ludo Master</h2>
+            <p class="text-gray-500 mb-8">Classic board game reimagined.</p>
+            
+            <div class="space-y-4 mb-8">
+                <div class="flex flex-col gap-2 text-left">
+                    <label class="text-sm font-semibold text-gray-700">Players</label>
+                    <div class="flex gap-2">
+                        <button class="player-count-btn flex-1 py-3 rounded-lg border-2 border-blue-500 bg-blue-50 text-blue-600 font-bold" data-count="2">2 Players</button>
+                        <button class="player-count-btn flex-1 py-3 rounded-lg border-2 border-gray-200 text-gray-500 font-bold hover:bg-gray-50" data-count="3">3 Players</button>
+                        <button class="player-count-btn flex-1 py-3 rounded-lg border-2 border-gray-200 text-gray-500 font-bold hover:bg-gray-50" data-count="4">4 Players</button>
+                    </div>
+                </div>
+
+                 <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <span class="text-gray-700 font-semibold">Play against CPU?</span>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="cpu-toggle" class="sr-only peer" checked>
+                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                    </label>
+                </div>
+            </div>
+
+            <button id="start-btn" class="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg transform active:scale-95 transition-all text-lg">Start Game</button>
+        </div>
+    </div>
+
+    <!-- Winner Modal -->
+    <div id="winner-modal" class="modal fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl shadow-2xl p-8 w-[90%] max-w-sm text-center animate-bounce-small">
+            <div class="text-6xl mb-4">🏆</div>
+            <h2 class="text-3xl font-bold text-gray-800 mb-2">Game Over!</h2>
+            <p id="winner-text" class="text-xl font-bold text-blue-600 mb-6">Red Wins!</p>
+            <button id="restart-btn" class="w-full py-3 bg-green-500 hover:bg-green-600 text-white font-bold rounded-xl shadow-lg transition-all">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * Game Constants & Configuration
+         */
+        const COLORS = {
+            RED: '#FF5252',
+            GREEN: '#00E676',
+            YELLOW: '#FFEA00',
+            BLUE: '#2979FF',
+            SAFE: '#e0e0e0', // Grey for safe spots
+            BOARD: '#FFFFFF'
+        };
+
+        const PLAYER_CONFIG = [
+            { id: 0, name: 'Red', color: COLORS.RED, startIdx: 0 },
+            { id: 1, name: 'Green', color: COLORS.GREEN, startIdx: 13 },
+            { id: 2, name: 'Yellow', color: COLORS.YELLOW, startIdx: 26 },
+            { id: 3, name: 'Blue', color: COLORS.BLUE, startIdx: 39 }
+        ];
+
+        // Ludo grid is 15x15
+        const GRID_SIZE = 15;
+        
+        // Define the main walking path (52 steps) on the 15x15 grid
+        // Start bottom-left, go clockwise
+        const MAIN_PATH = [
+            // Red Home Straight Up
+            {x:6,y:13}, {x:6,y:12}, {x:6,y:11}, {x:6,y:10}, {x:6,y:9}, 
+            // Turn Left towards Green
+            {x:5,y:8}, {x:4,y:8}, {x:3,y:8}, {x:2,y:8}, {x:1,y:8}, {x:0,y:8},
+            // Turn Up (Green Start)
+            {x:0,y:7}, {x:0,y:6}, 
+            // Turn Right
+            {x:1,y:6}, {x:2,y:6}, {x:3,y:6}, {x:4,y:6}, {x:5,y:6},
+            // Turn Up towards Yellow
+            {x:6,y:5}, {x:6,y:4}, {x:6,y:3}, {x:6,y:2}, {x:6,y:1}, {x:6,y:0},
+            // Turn Right (Yellow Start)
+            {x:7,y:0}, {x:8,y:0},
+            // Turn Down
+            {x:8,y:1}, {x:8,y:2}, {x:8,y:3}, {x:8,y:4}, {x:8,y:5},
+            // Turn Right towards Blue
+            {x:9,y:6}, {x:10,y:6}, {x:11,y:6}, {x:12,y:6}, {x:13,y:6}, {x:14,y:6},
+            // Turn Down (Blue Start)
+            {x:14,y:7}, {x:14,y:8},
+            // Turn Left
+            {x:13,y:8}, {x:12,y:8}, {x:11,y:8}, {x:10,y:8}, {x:9,y:8},
+            // Turn Down towards Red
+            {x:8,y:9}, {x:8,y:10}, {x:8,y:11}, {x:8,y:12}, {x:8,y:13}, {x:8,y:14},
+            // Turn Left (Red Start connection)
+            {x:7,y:14} 
+        ];
+
+        const HOME_PATHS = [
+            // Red Home Path (Index 0)
+            [{x:7,y:13}, {x:7,y:12}, {x:7,y:11}, {x:7,y:10}, {x:7,y:9}, {x:7,y:8}], // Final is center
+            // Green Home Path (Index 1)
+            [{x:1,y:7}, {x:2,y:7}, {x:3,y:7}, {x:4,y:7}, {x:5,y:7}, {x:6,y:7}],
+            // Yellow Home Path (Index 2)
+            [{x:7,y:1}, {x:7,y:2}, {x:7,y:3}, {x:7,y:4}, {x:7,y:5}, {x:7,y:6}],
+            // Blue Home Path (Index 3)
+            [{x:13,y:7}, {x:12,y:7}, {x:11,y:7}, {x:10,y:7}, {x:9,y:7}, {x:8,y:7}]
+        ];
+
+        // Safe squares indices on the MAIN_PATH
+        // Red start: 1, Green Start: 14, Yellow Start: 27, Blue Start: 40
+        // Also stars: 9, 22, 35, 48
+        const SAFE_INDICES = [1, 9, 14, 22, 27, 35, 40, 48];
+
+        /**
+         * Sound Manager (Web Audio API)
+         */
+        class SoundManager {
+            constructor() {
+                this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                this.enabled = true;
+            }
+
+            playTone(freq, type, duration, vol = 0.1) {
+                if (!this.enabled) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + duration);
+            }
+
+            playDice() { this.playTone(600, 'square', 0.1, 0.05); }
+            playMove() { this.playTone(400, 'sine', 0.1); }
+            playKill() { this.playTone(150, 'sawtooth', 0.3, 0.2); setTimeout(() => this.playTone(100, 'sawtooth', 0.3, 0.2), 100); }
+            playWin() { 
+                [300, 400, 500, 600, 800].forEach((f, i) => setTimeout(() => this.playTone(f, 'sine', 0.2, 0.2), i*100)); 
+            }
+            playTurnSwitch() { this.playTone(800, 'triangle', 0.1, 0.05); }
+        }
+
+        /**
+         * Game Logic Class
+         */
+        class LudoGame {
+            constructor(canvas) {
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d');
+                this.sound = new SoundManager();
+                
+                this.players = [];
+                this.currentPlayerIndex = 0;
+                this.diceValue = null;
+                this.awaitingMove = false;
+                this.diceRolling = false;
+                
+                // Animation State
+                this.animatingPieces = []; // { playerIdx, pieceIdx, startPos, endPos, progress }
+                this.lastFrameTime = 0;
+
+                // Canvas Scaling
+                this.resize();
+                window.addEventListener('resize', () => this.resize());
+
+                // Interaction
+                this.canvas.addEventListener('click', (e) => this.handleClick(e));
+                
+                this.gameState = 'MENU'; // MENU, PLAYING, GAMEOVER
+            }
+
+            resize() {
+                const container = this.canvas.parentElement;
+                const size = Math.min(container.clientWidth, container.clientHeight) - 20;
+                this.canvas.width = size * 2; // Retina
+                this.canvas.height = size * 2;
+                this.canvas.style.width = `${size}px`;
+                this.canvas.style.height = `${size}px`;
+                this.cellSize = this.canvas.width / GRID_SIZE;
+                this.render();
+            }
+
+            initGame(playerCount, cpuEnabled) {
+                // AudioContext needs interaction to unlock
+                if(this.sound.ctx.state === 'suspended') this.sound.ctx.resume();
+
+                this.players = [];
+                for (let i = 0; i < 4; i++) {
+                    if (i < playerCount) {
+                        this.players.push({
+                            id: i,
+                            isCPU: cpuEnabled && i > 0, // Player 0 is human, others CPU if enabled
+                            active: true,
+                            pieces: [-1, -1, -1, -1], // -1: Base, 0-50: Main Path, 51-56: Home Path, 99: Goal
+                            won: false
+                        });
+                    } else {
+                        // Inactive placeholder
+                         this.players.push({ id: i, active: false, pieces: [], isCPU: false });
+                    }
+                }
+
+                this.currentPlayerIndex = 0;
+                this.diceValue = null;
+                this.awaitingMove = false;
+                this.gameState = 'PLAYING';
+                this.updateUI();
+                this.render();
+            }
+
+            // --- Logic Helpers ---
+
+            // Convert piece logic position to grid coordinates {x, y}
+            getPieceCoords(playerIdx, pieceVal) {
+                // In Base
+                if (pieceVal === -1) {
+                    // Coordinates for base pockets
+                    const baseOffsets = [
+                        {x: 1, y: 12}, // Red Base (Bottom Left)
+                        {x: 1, y: 1},  // Green Base (Top Left)
+                        {x: 12, y: 1}, // Yellow Base (Top Right)
+                        {x: 12, y: 12} // Blue Base (Bottom Right)
+                    ];
+                    const offset = baseOffsets[playerIdx];
+                    // Arrange 4 pieces in a 2x2 grid within base
+                    // pieces 0,1,2,3
+                    // We need to know WHICH piece this is. 
+                    // To simplify, we'll calculate visual offset dynamically in render.
+                    return offset; 
+                }
+                
+                // Goal
+                if (pieceVal === 99) {
+                    // Center of board roughly
+                    return {x: 7, y: 7};
+                }
+
+                const playerOffset = PLAYER_CONFIG[playerIdx].startIdx; // e.g., 0, 13, 26, 39
+                
+                // If in main path
+                if (pieceVal < 51) {
+                    let pathIdx = (playerOffset + pieceVal) % 52;
+                    return MAIN_PATH[pathIdx];
+                }
+
+                // If in home path
+                // pieceVal 51 = index 0 in HOME_PATHS
+                let homeIdx = pieceVal - 51;
+                if(homeIdx > 5) homeIdx = 5; // Cap at center
+                return HOME_PATHS[playerIdx][homeIdx];
+            }
+
+            rollDice() {
+                if (this.diceRolling || this.awaitingMove || this.gameState !== 'PLAYING') return;
+                
+                // CPU check: Prevent human from rolling for CPU
+                const player = this.players[this.currentPlayerIndex];
+                if (player.isCPU) return;
+
+                this.performRoll();
+            }
+
+            performRoll() {
+                this.diceRolling = true;
+                this.sound.playDice();
+
+                // Visual animation of dice logic is in the DOM, we trigger it here
+                const diceEl = document.getElementById('dice-el');
+                const x = Math.floor(Math.random() * 4) * 360;
+                const y = Math.floor(Math.random() * 4) * 360;
+                diceEl.style.transform = `rotateX(${x}deg) rotateY(${y}deg)`;
+
+                setTimeout(() => {
+                    this.diceValue = Math.floor(Math.random() * 6) + 1;
+                    this.updateDiceVisuals(this.diceValue);
+                    this.diceRolling = false;
+                    this.checkMoves();
+                }, 500);
+            }
+
+            updateDiceVisuals(val) {
+                const diceEl = document.getElementById('dice-el');
+                // Reset transform to show specific face.
+                // Our CSS faces: 1=0,0; 2=0,90; 3=0,180; 4=0,-90; 5=90,0; 6=-90,0
+                // We must overwrite the random spin transform
+                let transform = '';
+                switch(val) {
+                    case 1: transform = 'rotateY(0deg)'; break;
+                    case 2: transform = 'rotateY(-90deg)'; break;
+                    case 3: transform = 'rotateY(180deg)'; break;
+                    case 4: transform = 'rotateY(90deg)'; break;
+                    case 5: transform = 'rotateX(-90deg)'; break;
+                    case 6: transform = 'rotateX(90deg)'; break;
+                }
+                diceEl.style.transform = transform;
+            }
+
+            checkMoves() {
+                const player = this.players[this.currentPlayerIndex];
+                const pieces = player.pieces;
+                let possibleMoves = [];
+
+                pieces.forEach((p, idx) => {
+                    if (p === 99) return; // Already finished
+
+                    if (p === -1) {
+                        if (this.diceValue === 6) possibleMoves.push(idx);
+                    } else {
+                        if (p + this.diceValue <= 56) possibleMoves.push(idx); // 56 is max index in home path
+                    }
+                });
+
+                if (possibleMoves.length === 0) {
+                    // No moves
+                    setTimeout(() => this.nextTurn(), 1000);
+                } else if (possibleMoves.length === 1 && player.isCPU) {
+                     // CPU: Only one move, take it
+                     setTimeout(() => this.movePiece(this.currentPlayerIndex, possibleMoves[0]), 800);
+                } else if (player.isCPU) {
+                    // CPU: Choose best move
+                    setTimeout(() => this.cpuChooseMove(possibleMoves), 800);
+                } else {
+                    // Human: Wait for click
+                    this.awaitingMove = true;
+                    // Auto-move if only one piece is out and it's valid? 
+                    // Standard Ludo often forces the only possible move.
+                    if (possibleMoves.length === 1) {
+                         // Optional: Enable this for faster gameplay
+                         // this.movePiece(this.currentPlayerIndex, possibleMoves[0]);
+                         // Keeping manual for "tactile" feel
+                    }
+                    this.render(); // Re-render to highlight movable pieces
+                }
+            }
+
+            cpuChooseMove(moves) {
+                // Heuristic
+                // 1. Capture enemy (priority)
+                // 2. Escape base (if 6)
+                // 3. Move closest to home
+                // 4. Random
+                
+                let bestMove = moves[0];
+                let maxScore = -100;
+
+                const player = this.players[this.currentPlayerIndex];
+
+                moves.forEach(pieceIdx => {
+                    let score = 0;
+                    const currentPos = player.pieces[pieceIdx];
+                    
+                    // Logic: Get out of base
+                    if (currentPos === -1 && this.diceValue === 6) score += 50;
+
+                    // Logic: Capture
+                    // Calculate target position
+                    let targetPosVal = currentPos === -1 ? 0 : currentPos + this.diceValue;
+                    // Check if target has opponent
+                    // Convert local path val to global index to check collision
+                    // This is complex because we need to map local target to global coord
+                    // Simplified: Just prefer advancing for now in this single-file constraint
+                    if (targetPosVal > 50) score += 20; // Entering home path
+                    if (targetPosVal === 56) score += 100; // Finish
+
+                    score += Math.random() * 10; // Randomness
+
+                    if (score > maxScore) {
+                        maxScore = score;
+                        bestMove = pieceIdx;
+                    }
+                });
+
+                this.movePiece(this.currentPlayerIndex, bestMove);
+            }
+
+            movePiece(playerIdx, pieceIdx) {
+                this.awaitingMove = false;
+                const player = this.players[playerIdx];
+                const currentVal = player.pieces[pieceIdx];
+                let targetVal = 0;
+
+                if (currentVal === -1) {
+                    targetVal = 0; // Move to start
+                } else {
+                    targetVal = currentVal + this.diceValue;
+                }
+
+                // Animation setup
+                // We'll just animate logic state at the end, or implement tweening.
+                // For MVP smooth movement: Update state, trigger render interpolation?
+                // Better: Animate visual position, then update logical state.
+                
+                // Update Logic immediately
+                player.pieces[pieceIdx] = targetVal;
+                this.sound.playMove();
+
+                // Check Collisions (Captures)
+                // Only if on main board (0-50)
+                let killed = false;
+                if (targetVal < 51) {
+                    const myGlobalIdx = (PLAYER_CONFIG[playerIdx].startIdx + targetVal) % 52;
+                    
+                    // Is this a safe spot?
+                    if (!SAFE_INDICES.includes(myGlobalIdx)) {
+                        // Check other players
+                        this.players.forEach(p => {
+                            if (p.id !== playerIdx && p.active) {
+                                p.pieces.forEach((enemyPos, eIdx) => {
+                                    if (enemyPos > -1 && enemyPos < 51) {
+                                        const enemyGlobal = (PLAYER_CONFIG[p.id].startIdx + enemyPos) % 52;
+                                        if (enemyGlobal === myGlobalIdx) {
+                                            // Capture!
+                                            p.pieces[eIdx] = -1; // Send back to base
+                                            killed = true;
+                                            this.sound.playKill();
+                                            // TODO: Add visual popup "Kill!"
+                                        }
+                                    }
+                                });
+                            }
+                        });
+                    }
+                }
+
+                // Check Win for this piece
+                if (targetVal === 56) {
+                    player.pieces[pieceIdx] = 99; // Mark as done
+                }
+
+                // Check Player Win
+                if (player.pieces.every(p => p === 99)) {
+                    player.won = true;
+                    this.gameState = 'GAMEOVER';
+                    this.sound.playWin();
+                    document.getElementById('winner-modal').classList.add('active');
+                    document.getElementById('winner-text').innerText = `${player.name} Wins!`;
+                    document.getElementById('winner-text').style.color = player.color;
+                    this.render();
+                    return;
+                }
+
+                // Turn Logic
+                // Bonus turn if 6 or Kill
+                if (this.diceValue === 6 || killed) {
+                    this.diceValue = null;
+                    this.updateUI(); // Keep current player
+                    if (player.isCPU) {
+                         setTimeout(() => this.performRoll(), 1000);
+                    }
+                } else {
+                    this.nextTurn();
+                }
+
+                this.render();
+            }
+
+            nextTurn() {
+                this.sound.playTurnSwitch();
+                this.diceValue = null;
+                let loops = 0;
+                do {
+                    this.currentPlayerIndex = (this.currentPlayerIndex + 1) % 4;
+                    loops++;
+                } while (!this.players[this.currentPlayerIndex].active && loops < 5);
+
+                this.updateUI();
+
+                // Trigger CPU
+                if (this.players[this.currentPlayerIndex].isCPU && this.gameState === 'PLAYING') {
+                    setTimeout(() => this.performRoll(), 1000);
+                }
+            }
+
+            updateUI() {
+                const p = this.players[this.currentPlayerIndex];
+                const dot = document.getElementById('turn-dot');
+                const txt = document.getElementById('turn-text');
+                const btn = document.getElementById('dice-btn');
+                const msg = document.getElementById('dice-msg');
+
+                dot.style.backgroundColor = p.color;
+                txt.innerText = `${p.name}'s Turn`;
+                
+                // Visual cue for active player
+                if (!p.isCPU) {
+                    btn.classList.add('pulse-ring');
+                    btn.style.opacity = '1';
+                    btn.style.pointerEvents = 'auto';
+                    msg.innerText = "Tap to Roll";
+                } else {
+                    btn.classList.remove('pulse-ring');
+                    btn.style.opacity = '0.7';
+                    btn.style.pointerEvents = 'none';
+                    msg.innerText = "CPU Rolling...";
+                }
+
+                if (this.diceValue) {
+                    msg.innerText = this.diceValue;
+                }
+            }
+
+            handleClick(e) {
+                if (!this.awaitingMove) return;
+                
+                const rect = this.canvas.getBoundingClientRect();
+                // Account for scale
+                const scaleX = this.canvas.width / rect.width;
+                const scaleY = this.canvas.height / rect.height;
+
+                const x = (e.clientX - rect.left) * scaleX;
+                const y = (e.clientY - rect.top) * scaleY;
+
+                // Check which piece was clicked
+                const player = this.players[this.currentPlayerIndex];
+                
+                // Identify clicked piece
+                // We need to match visual coordinates to click
+                let clickedPieceIdx = -1;
+                
+                // Reverse iterate to catch top-most pieces first
+                for(let i=3; i>=0; i--) {
+                    const pos = player.pieces[i];
+                    if (pos === 99) continue;
+
+                    let coords;
+                    if (pos === -1) {
+                        // Base calculation logic mimics render logic
+                        const base = this.getPieceCoords(this.currentPlayerIndex, -1);
+                        const offsets = [{x:0, y:0}, {x:1, y:0}, {x:0, y:1}, {x:1, y:1}];
+                        // Scale base coords to pixels
+                        const cx = (base.x + offsets[i].x * 0.5 + 0.25) * this.cellSize + this.cellSize/2;
+                        const cy = (base.y + offsets[i].y * 0.5 + 0.25) * this.cellSize + this.cellSize/2;
+                        coords = {x: cx, y: cy};
+                    } else {
+                        const gridPos = this.getPieceCoords(this.currentPlayerIndex, pos);
+                        coords = {
+                            x: gridPos.x * this.cellSize + this.cellSize/2,
+                            y: gridPos.y * this.cellSize + this.cellSize/2
+                        };
+                    }
+
+                    // Distance check
+                    const dx = x - coords.x;
+                    const dy = y - coords.y;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    
+                    if (dist < this.cellSize * 0.6) {
+                        clickedPieceIdx = i;
+                        break;
+                    }
+                }
+
+                if (clickedPieceIdx !== -1) {
+                    // Check validity
+                    const pVal = player.pieces[clickedPieceIdx];
+                    if (pVal === -1 && this.diceValue !== 6) return;
+                    if (pVal > -1 && pVal + this.diceValue > 56) return;
+                    
+                    this.movePiece(this.currentPlayerIndex, clickedPieceIdx);
+                }
+            }
+
+            // --- Rendering ---
+
+            render() {
+                // Clear
+                this.ctx.fillStyle = COLORS.BOARD;
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+                this.drawBoard();
+                this.drawPieces();
+
+                // Animation Loop if needed
+                // requestAnimationFrame(() => this.render()); 
+                // For battery saving, we only re-render on state change in this simple version
+            }
+
+            drawBoard() {
+                const ctx = this.ctx;
+                const cs = this.cellSize;
+
+                // Draw Base Squares
+                const bases = [
+                    {x:0, y:9, c: COLORS.RED}, 
+                    {x:0, y:0, c: COLORS.GREEN},
+                    {x:9, y:0, c: COLORS.YELLOW},
+                    {x:9, y:9, c: COLORS.BLUE}
+                ];
+
+                bases.forEach(b => {
+                    ctx.fillStyle = b.c;
+                    ctx.fillRect(b.x * cs, b.y * cs, 6 * cs, 6 * cs);
+                    // White inner box
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect((b.x+1)*cs, (b.y+1)*cs, 4*cs, 4*cs);
+                });
+
+                // Draw Path Cells
+                ctx.strokeStyle = '#ccc';
+                ctx.lineWidth = 1;
+
+                // Grid lines logic is complex, simpler to draw specific cells
+                // Draw 52 main cells
+                MAIN_PATH.forEach((pos, i) => {
+                    ctx.fillStyle = 'white';
+                    
+                    // Colored Starts
+                    if (i === 1) ctx.fillStyle = COLORS.RED;
+                    if (i === 14) ctx.fillStyle = COLORS.GREEN;
+                    if (i === 27) ctx.fillStyle = COLORS.YELLOW;
+                    if (i === 40) ctx.fillStyle = COLORS.BLUE;
+
+                    // Safe Spots (Stars)
+                    if (SAFE_INDICES.includes(i)) {
+                         if (![1, 14, 27, 40].includes(i)) ctx.fillStyle = COLORS.SAFE;
+                    }
+
+                    ctx.strokeRect(pos.x * cs, pos.y * cs, cs, cs);
+                    ctx.fillRect(pos.x * cs, pos.y * cs, cs, cs);
+                    
+                    // Draw Star
+                    if (SAFE_INDICES.includes(i)) {
+                        ctx.fillStyle = 'rgba(0,0,0,0.1)';
+                        this.drawStar(pos.x * cs + cs/2, pos.y * cs + cs/2, 5, cs/4, cs/8);
+                    }
+                });
+
+                // Draw Home Paths
+                HOME_PATHS.forEach((path, pIdx) => {
+                    const c = PLAYER_CONFIG[pIdx].color;
+                    path.forEach((pos) => {
+                         ctx.fillStyle = c;
+                         ctx.fillRect(pos.x * cs, pos.y * cs, cs, cs);
+                         ctx.strokeRect(pos.x * cs, pos.y * cs, cs, cs);
+                    });
+                });
+
+                // Center Triangle Area
+                ctx.beginPath();
+                ctx.moveTo(6*cs, 6*cs);
+                ctx.lineTo(9*cs, 6*cs);
+                ctx.lineTo(9*cs, 9*cs);
+                ctx.lineTo(6*cs, 9*cs);
+                ctx.closePath();
+                ctx.fillStyle = 'white';
+                ctx.fill();
+                
+                // Colored Triangles
+                const center = {x: 7.5*cs, y: 7.5*cs};
+                
+                // Red Tri
+                ctx.fillStyle = COLORS.RED;
+                ctx.beginPath(); ctx.moveTo(6*cs, 9*cs); ctx.lineTo(9*cs, 9*cs); ctx.lineTo(center.x, center.y); ctx.fill();
+                // Green Tri
+                ctx.fillStyle = COLORS.GREEN;
+                ctx.beginPath(); ctx.moveTo(6*cs, 6*cs); ctx.lineTo(6*cs, 9*cs); ctx.lineTo(center.x, center.y); ctx.fill();
+                // Yellow Tri
+                ctx.fillStyle = COLORS.YELLOW;
+                ctx.beginPath(); ctx.moveTo(6*cs, 6*cs); ctx.lineTo(9*cs, 6*cs); ctx.lineTo(center.x, center.y); ctx.fill();
+                // Blue Tri
+                ctx.fillStyle = COLORS.BLUE;
+                ctx.beginPath(); ctx.moveTo(9*cs, 6*cs); ctx.lineTo(9*cs, 9*cs); ctx.lineTo(center.x, center.y); ctx.fill();
+
+            }
+
+            drawStar(cx, cy, spikes, outerRadius, innerRadius) {
+                let rot = Math.PI / 2 * 3;
+                let x = cx;
+                let y = cy;
+                let step = Math.PI / spikes;
+
+                this.ctx.beginPath();
+                this.ctx.moveTo(cx, cy - outerRadius);
+                for (let i = 0; i < spikes; i++) {
+                    x = cx + Math.cos(rot) * outerRadius;
+                    y = cy + Math.sin(rot) * outerRadius;
+                    this.ctx.lineTo(x, y);
+                    rot += step;
+
+                    x = cx + Math.cos(rot) * innerRadius;
+                    y = cy + Math.sin(rot) * innerRadius;
+                    this.ctx.lineTo(x, y);
+                    rot += step;
+                }
+                this.ctx.lineTo(cx, cy - outerRadius);
+                this.ctx.closePath();
+                this.ctx.fill();
+            }
+
+            drawPieces() {
+                const cs = this.cellSize;
+                
+                // Render order: Inactive pieces first, then active
+                
+                // Map to store pieces at specific coordinates to handle stacking
+                // Key: "x,y", Value: count
+                const stackMap = {};
+
+                this.players.forEach((player, pIdx) => {
+                    if (!player.active) return;
+                    
+                    player.pieces.forEach((pos, pieceIdx) => {
+                        if (pos === 99) return; // Hidden if won
+
+                        let x, y;
+
+                        if (pos === -1) {
+                            // Base
+                            const base = this.getPieceCoords(pIdx, -1);
+                            // Sub-grid for base
+                            const offsets = [{x:0, y:0}, {x:1, y:0}, {x:0, y:1}, {x:1, y:1}];
+                            x = (base.x + offsets[pieceIdx].x * 0.5 + 0.25) * cs;
+                            y = (base.y + offsets[pieceIdx].y * 0.5 + 0.25) * cs;
+                        } else {
+                            const gridPos = this.getPieceCoords(pIdx, pos);
+                            // Check for stacking
+                            const key = `${gridPos.x},${gridPos.y}`;
+                            const stackCount = stackMap[key] || 0;
+                            stackMap[key] = stackCount + 1;
+                            
+                            // Offset based on stack
+                            const offset = stackCount * (cs * 0.1); 
+                            x = gridPos.x * cs + offset;
+                            y = gridPos.y * cs + offset;
+                        }
+
+                        this.drawPawn(x, y, player.color, pIdx === this.currentPlayerIndex, pos, pieceIdx);
+                    });
+                });
+            }
+
+            drawPawn(x, y, color, isTurn, posVal, pieceIdx) {
+                const ctx = this.ctx;
+                const cs = this.cellSize;
+                const r = cs * 0.35;
+                
+                // Glow if movable
+                let isMovable = false;
+                if (isTurn && this.awaitingMove) {
+                     if (posVal === -1 && this.diceValue === 6) isMovable = true;
+                     if (posVal > -1 && posVal + this.diceValue <= 56) isMovable = true;
+                }
+
+                if (isMovable) {
+                    ctx.beginPath();
+                    ctx.arc(x + cs/2, y + cs/2, r * 1.4, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+                    ctx.fill();
+                }
+
+                // Shadow
+                ctx.beginPath();
+                ctx.ellipse(x + cs/2, y + cs/2 + r*0.2, r, r*0.4, 0, 0, Math.PI*2);
+                ctx.fillStyle = 'rgba(0,0,0,0.3)';
+                ctx.fill();
+
+                // Body
+                ctx.beginPath();
+                ctx.arc(x + cs/2, y + cs/2 - r*0.2, r, 0, Math.PI * 2);
+                ctx.fillStyle = color;
+                ctx.fill();
+                
+                // Stroke
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+                ctx.stroke();
+
+                // Shine
+                ctx.beginPath();
+                ctx.arc(x + cs/2 - r*0.3, y + cs/2 - r*0.5, r*0.3, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255,255,255,0.4)';
+                ctx.fill();
+
+                // Indicator if multiple logic? No, simple circles for Ludo
+            }
+        }
+
+        // --- Init ---
+        const canvas = document.getElementById('game-canvas');
+        const game = new LudoGame(canvas);
+
+        // UI Event Listeners
+        const menuModal = document.getElementById('menu-modal');
+        const winnerModal = document.getElementById('winner-modal');
+        const startBtn = document.getElementById('start-btn');
+        const restartBtn = document.getElementById('restart-btn');
+        const menuBtn = document.getElementById('menu-btn');
+        const diceBtn = document.getElementById('dice-btn');
+        const cpuToggle = document.getElementById('cpu-toggle');
+
+        let selectedPlayerCount = 2;
+
+        document.querySelectorAll('.player-count-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                // Style handling
+                document.querySelectorAll('.player-count-btn').forEach(b => {
+                    b.classList.remove('bg-blue-50', 'text-blue-600', 'border-blue-500');
+                    b.classList.add('border-gray-200', 'text-gray-500');
+                });
+                e.target.classList.remove('border-gray-200', 'text-gray-500');
+                e.target.classList.add('bg-blue-50', 'text-blue-600', 'border-blue-500');
+                selectedPlayerCount = parseInt(e.target.dataset.count);
+            });
+        });
+
+        startBtn.addEventListener('click', () => {
+            const cpu = cpuToggle.checked;
+            menuModal.classList.remove('active');
+            game.initGame(selectedPlayerCount, cpu);
+        });
+
+        restartBtn.addEventListener('click', () => {
+            winnerModal.classList.remove('active');
+            menuModal.classList.add('active');
+        });
+
+        menuBtn.addEventListener('click', () => {
+            menuModal.classList.add('active');
+        });
+
+        diceBtn.addEventListener('click', () => {
+            game.rollDice();
+        });
+
+    </script>
+</body>
+</html>
